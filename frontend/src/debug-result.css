@@ -1,0 +1,100 @@
+/* Paste these into your index.css or global stylesheet */
+
+.debug-result h2 {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #0f172a;
+  margin: 1.75rem 0 0.5rem;
+}
+
+.debug-result h2:first-child {
+  margin-top: 0;
+}
+
+.debug-result p {
+  font-size: 0.875rem;
+  line-height: 1.75;
+  color: #475569;
+  margin-bottom: 0.75rem;
+}
+
+.debug-result ul,
+.debug-result ol {
+  padding-left: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.debug-result ul {
+  list-style-type: disc;
+}
+
+.debug-result ol {
+  list-style-type: decimal;
+}
+
+.debug-result li {
+  font-size: 0.875rem;
+  line-height: 1.75;
+  color: #475569;
+  margin-bottom: 0.375rem;
+}
+
+.debug-result li::marker {
+  color: #94a3b8;
+}
+
+.debug-result code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.82em;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 0.1em 0.4em;
+  color: #1e293b;
+}
+
+.debug-result pre {
+  background: #0f1117;
+  border-radius: 10px;
+  border: 1px solid #e2e8f0;
+  margin: 1.25rem 0;
+  overflow: hidden;
+}
+
+.debug-result pre code {
+  display: block;
+  padding: 1rem;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  color: #e2e8f0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.debug-result strong {
+  font-weight: 500;
+  color: #0f172a;
+}
+
+.debug-result em {
+  font-style: italic;
+}
+
+.debug-result a {
+  color: #2563eb;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.debug-result a:hover {
+  color: #1d4ed8;
+}
+
+.debug-result hr {
+  border: none;
+  border-top: 1px solid #e2e8f0;
+  margin: 1.5rem 0;
+}
