@@ -167,10 +167,30 @@ export default function App() {
   };
 
   const loadSample = () => {
-    setLanguage('JavaScript');
-    setErrorMessage("TypeError: Cannot read properties of undefined (reading 'map')");
-    setCodeSnippet(`const users = undefined;\n\nconst names = users.map((user) => user.name);\nconsole.log(names);`);
-  };
+  setLanguage('Python');
+
+  setErrorMessage(`KeyError: 402
+
+This happens because Flask does not have a default handler for HTTP status code 402 (Payment Required).`);
+
+  setCodeSnippet(`from flask import Flask
+from werkzeug.exceptions import HTTPException
+
+app = Flask(__name__)
+
+def http_exception_handler(e):
+    return {"error": str(e)}, e.code
+
+# This line throws KeyError: 402
+app.errorhandler(402)(http_exception_handler)
+
+@app.route("/")
+def home():
+    return "Hello World"
+
+if __name__ == "__main__":
+    app.run(debug=True)`);
+};
 
   return (
     <>
@@ -259,7 +279,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-100 text-slate-900">
         {/* Header */}
         <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-          <div className="mx-auto flex h-14 w-full max-w-5xl items-center justify-between px-5">
+          <div className="flex h-14 w-full items-center justify-between px-8">
             <button onClick={handleReset} className="text-left">
               <div className="text-[15px] font-medium text-slate-950">RAG Debugging Assistant</div>
             </button>
@@ -274,14 +294,11 @@ export default function App() {
           </div>
         </header>
 
-        <main className="mx-auto w-full max-w-5xl px-5 py-8">
+        <main className="w-full px-8 py-8">
           {/* Form */}
           {view === 'form' && (
-            <div className="grid gap-8 lg:grid-cols-[1fr_1.1fr] lg:items-start">
+            <div className="grid gap-8 lg:grid-cols-[1fr_1.2fr] w-full">
               <section className="pt-1">
-                <h1 className="text-2xl font-medium tracking-tight text-slate-950 sm:text-3xl">
-                  Debug errors faster
-                </h1>
                 <p className="mt-3 text-sm leading-7 text-slate-500">
                   Paste your error message, add the failing code if you have it, and get a
                   structured analysis with a suggested fix.
@@ -376,7 +393,7 @@ export default function App() {
 
           {/* Result */}
           {view === 'result' && (
-            <div className="mx-auto max-w-3xl">
+            <div className="w-full max-w-none">
               <div className="mb-5 flex items-center justify-between gap-4">
                 <h2 className="text-2xl font-medium tracking-tight text-slate-950">
                   Suggested fix
