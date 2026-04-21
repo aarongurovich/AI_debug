@@ -169,27 +169,13 @@ export default function App() {
   const loadSample = () => {
   setLanguage('Python');
 
-  setErrorMessage(`KeyError: 402
+  setErrorMessage(`CParserError: Error tokenizing data`);
 
-This happens because Flask does not have a default handler for HTTP status code 402 (Payment Required).`);
+  setCodeSnippet(`
+  import pandas as pd
 
-  setCodeSnippet(`from flask import Flask
-from werkzeug.exceptions import HTTPException
-
-app = Flask(__name__)
-
-def http_exception_handler(e):
-    return {"error": str(e)}, e.code
-
-# This line throws KeyError: 402
-app.errorhandler(402)(http_exception_handler)
-
-@app.route("/")
-def home():
-    return "Hello World"
-
-if __name__ == "__main__":
-    app.run(debug=True)`);
+  df = pd.read_csv("data.csv")
+  print(df)`);
 };
 
   return (
