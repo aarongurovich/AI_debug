@@ -1,10 +1,23 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
+import { marked } from 'marked';
+import hljs from 'highlight.js';
+import 'highlight.js/styles/github-dark.min.css';
 
 const SUPABASE_URL = 'https://cycgenxaotnkzqhrkhlf.supabase.co';
 const SUPABASE_KEY = 'PASTE_YOUR_SERVICE_ROLE_KEY_HERE';
 
 const LANGUAGES = ['C', 'Python', 'JavaScript', 'Java'];
+
+marked.setOptions({
+  highlight: (code, lang) => {
+    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+    return hljs.highlight(code, { language }).value;
+  },
+  langPrefix: 'hljs language-',
+  breaks: false,
+  gfm: true,
+});
 
 // Loads marked + highlight.js from CDN once
 function useMarkdownRenderer() {
@@ -62,13 +75,13 @@ function useMarkdownRenderer() {
 }
 
 function DebugResult({ markdown }) {
-  const { ready, render } = useMarkdownRenderer();
   const ref = useRef(null);
 
   const html = useMemo(() => {
-    if (!ready) return '';
-    return render(markdown);
-  }, [ready, markdown]);
+    if (!markdown) return '';
+    const stripped = markdown.replace(/^#+ Sources[\s\S]*$/m, '').trimEnd();
+    return marked.parse(stripped);
+  }, [markdown]);
 
   // After inject, wrap every <pre> to add a language label bar
   useEffect(() => {
@@ -88,15 +101,7 @@ function DebugResult({ markdown }) {
     });
   }, [html]);
 
-  if (!ready) {
-    return (
-      <div className="flex items-center gap-2 py-4 text-sm text-slate-400">
-        <span className="h-4 w-4 animate-spin rounded-full border-2 border-slate-200 border-t-slate-400" />
-        Loading…
-      </div>
-    );
-  }
-
+  // No more loading states needed, it renders instantly
   return (
     <div
       ref={ref}

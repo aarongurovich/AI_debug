@@ -13,6 +13,8 @@
     "@monaco-editor/react": "^4.7.0",
     "@supabase/supabase-js": "^2.104.0",
     "@tailwindcss/postcss": "^4.2.3",
+    "highlight.js": "^11.9.0",
+    "marked": "^9.1.6",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",
