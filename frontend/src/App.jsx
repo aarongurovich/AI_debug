@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
+import Editor from '@monaco-editor/react';
 
 const SUPABASE_URL = 'https://cycgenxaotnkzqhrkhlf.supabase.co';
 const SUPABASE_KEY = 'PASTE_YOUR_SERVICE_ROLE_KEY_HERE';
@@ -115,6 +116,17 @@ export default function App() {
   const [requestError, setRequestError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
+  // Map display languages to Monaco editor language identifiers
+  const monacoLanguage = useMemo(() => {
+    switch (language) {
+      case 'C': return 'c';
+      case 'Python': return 'python';
+      case 'JavaScript': return 'javascript';
+      case 'Java': return 'java';
+      default: return 'plaintext';
+    }
+  }, [language]);
+
   const canSubmit = useMemo(
     () => errorMessage.trim().length > 0 && !isLoading,
     [errorMessage, isLoading]
@@ -167,16 +179,10 @@ export default function App() {
   };
 
   const loadSample = () => {
-  setLanguage('Python');
-
-  setErrorMessage(`CParserError: Error tokenizing data`);
-
-  setCodeSnippet(`
-  import pandas as pd
-
-  df = pd.read_csv("data.csv")
-  print(df)`);
-};
+    setLanguage('Python');
+    setErrorMessage(`CParserError: Error tokenizing data`);
+    setCodeSnippet(`import pandas as pd\n\ndf = pd.read_csv("data.csv")\nprint(df)`);
+  };
 
   return (
     <>
@@ -343,13 +349,25 @@ export default function App() {
                         optional
                       </span>
                     </label>
-                    <textarea
-                      value={codeSnippet}
-                      onChange={(e) => setCodeSnippet(e.target.value)}
-                      placeholder="Paste the relevant lines of code..."
-                      rows={7}
-                      className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-mono text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
-                    />
+                    <div className="h-56 w-full overflow-hidden rounded-lg border border-slate-200 focus-within:border-slate-300 bg-white">
+                      <Editor
+                        height="100%"
+                        language={monacoLanguage}
+                        theme="light"
+                        value={codeSnippet}
+                        onChange={(value) => setCodeSnippet(value || '')}
+                        options={{
+                          minimap: { enabled: false },
+                          fontSize: 13,
+                          fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                          scrollBeyondLastLine: false,
+                          padding: { top: 12, bottom: 12 },
+                          lineNumbersMinChars: 3,
+                          renderLineHighlight: 'none',
+                          scrollbar: { verticalScrollbarSize: 8 },
+                        }}
+                      />
+                    </div>
                   </div>
 
                   {requestError && (
