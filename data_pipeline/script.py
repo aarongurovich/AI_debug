@@ -1,17 +1,19 @@
 """
-RAG Debugging Assistant - Knowledge Base Scraper
-Scrapes Stack Overflow + GitHub solutions for Python/Java/JavaScript errors,
-embeds them with Gemini gemini-embedding-001 (768 dims), stores in Supabase pgvector.
+RAG Debugging Assistant - Knowledge Base Scraper (HIGH VOLUME)
+Past-year only. Embeds via Gemini gemini-embedding-001 (768 dims).
+Stores in Supabase pgvector.
 """
 import os
 import time
 import html
 import re
 import requests
+from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from google import genai
 from google.genai import types
 from supabase import create_client
+from markdownify import markdownify as md
 
 # --- Load credentials ---
 load_dotenv()
@@ -25,12 +27,19 @@ GH_TOKEN = os.getenv("GITHUB_TOKEN")
 gemini_client = genai.Client(api_key=GEMINI_KEY)
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# --- Config ---
+# --- Config: HIGH VOLUME ---
 LANGUAGES = ["python", "java", "javascript", "c"]
-SO_PAGES_PER_LANG = 3
-GH_REPOS_PER_LANG = 5
-GH_ISSUES_PER_REPO = 10
+SO_PAGES_PER_LANG = 10           # was 4
+SO_SEARCH_TERMS = ["error", "exception", "crash", "fails", "throws", "broken"]
+GH_REPOS_PER_LANG = 10           # was 5
+GH_ISSUES_PER_REPO = 100          # was 20
 EMBED_DIMS = 768
+
+# --- Past-year recency cutoff ---
+ONE_YEAR_AGO_DT = datetime.now(timezone.utc) - timedelta(days=365)
+ONE_YEAR_AGO_UNIX = int(ONE_YEAR_AGO_DT.timestamp())
+ONE_YEAR_AGO_ISO = ONE_YEAR_AGO_DT.strftime("%Y-%m-%dT%H:%M:%SZ")
+print(f"[Recency cutoff] Only fetching content since {ONE_YEAR_AGO_ISO}")
 
 
 # ========== Helpers ==========
@@ -38,13 +47,11 @@ EMBED_DIMS = 768
 def clean_html(text):
     if not text:
         return ""
-    text = re.sub(r"<[^>]+>", " ", text)
-    text = html.unescape(text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    converted = md(text, heading_style="ATX", code_language="", bullets="-")
+    converted = re.sub(r"\n{3,}", "\n\n", converted)
+    return converted.strip()
 
 
-# Regex patterns for extracting error lines per language
 ERROR_PATTERNS = {
     "python": [
         r"\b[A-Z][a-zA-Z]*(?:Error|Exception|Warning):\s*[^\n.]+",
@@ -61,69 +68,59 @@ ERROR_PATTERNS = {
         r"\b[A-Z][a-zA-Z]*Error:\s*[^\n]+",
     ],
     "c": [
-        # Compiler errors: file.c:42:1: error: expected ';'
         r"[\w./-]+\.[ch]:\d+:\d+:\s*(?:fatal\s+)?error:\s*[^\n]+",
-        # Linker: undefined reference to `foo'
         r"undefined reference to\s+[`'\"][^'\"\n]+[`'\"]",
-        # Segfault / runtime
         r"[Ss]egmentation fault(?:\s*\(core dumped\))?",
-        # Generic "fatal error:" or "error:" lines
         r"(?:fatal\s+)?error:\s*[^\n]+",
-        # Warnings
         r"warning:\s*[^\n]+",
     ],
 }
 
 
 def extract_error_only(text, language, fallback_title=""):
-    """
-    Extract just the error line from a full Stack Overflow question body.
-    Falls back to the question title if no pattern matches.
-    """
+    """Extract just the error line from a question/issue body, with garbage rejection."""
     if not text:
         return fallback_title.strip()
-
     patterns = ERROR_PATTERNS.get(language, [])
     for pattern in patterns:
         match = re.search(pattern, text)
         if match:
-            # Clean up the match - trim whitespace, cap length
             error = match.group(0).strip()
-            # Remove trailing junk after the error message
             error = re.sub(r"\s+", " ", error)
+            stripped = re.sub(r"[`\s\-_=*#:]+", "", error)
+            if len(stripped) < 10:
+                continue
+            if error.count("`") >= 3:
+                continue
+            if "![" in error or "](http" in error:
+                continue
+            alpha_chars = sum(1 for c in error if c.isalpha())
+            if alpha_chars < 8:
+                continue
+            tail = error.split(":", 1)[-1].strip()
+            if len(tail) < 5:
+                continue
             return error[:500]
-
-    # No pattern matched — fall back to just the question title
     return fallback_title.strip()[:500]
 
 
-# Cross-language pollution: content that should NOT be embedded as [language]
 CROSS_LANGUAGE_SIGNALS = {
-    "python": [
-        "Python.h:", "gcc ", "g++ ", "clang ", "x86_64-linux-gnu-gcc",
-        "NullPointerException", "ClassCastException", ".java:",
-        "npm install", "console.log(",
-    ],
-    "java": [
-        "Traceback (most recent call last)", "pip install", "ImportError:",
-        "npm install", "console.log(", ".py:", "def __init__",
-    ],
-    "javascript": [
-        "Traceback (most recent call last)", "pip install", "ImportError:",
-        "NullPointerException", "ClassCastException", ".java:",
-        "def __init__", "print(",
-    ],
-    "c": [
-        "Traceback (most recent call last)", "pip install",
-        "NullPointerException", "ClassCastException", ".java:",
-        "def __init__", "console.log(", "npm install",
-        "TypeError:", "ReferenceError:",
-    ],
+    "python": ["Python.h:", "gcc ", "g++ ", "clang ", "x86_64-linux-gnu-gcc",
+               "NullPointerException", "ClassCastException", ".java:",
+               "npm install", "console.log("],
+    "java": ["Traceback (most recent call last)", "pip install", "ImportError:",
+             "npm install", "console.log(", ".py:", "def __init__"],
+    "javascript": ["Traceback (most recent call last)", "pip install", "ImportError:",
+                   "NullPointerException", "ClassCastException", ".java:",
+                   "def __init__", "print("],
+    "c": ["Traceback (most recent call last)", "pip install",
+          "NullPointerException", "ClassCastException", ".java:",
+          "def __init__", "console.log(", "npm install",
+          "TypeError:", "ReferenceError:"],
 }
 
 
 def is_language_match(text, language):
-    """Reject content that's obviously from the wrong language."""
     lower = text.lower()
     for signal in CROSS_LANGUAGE_SIGNALS.get(language, []):
         if signal.lower() in lower:
@@ -131,8 +128,7 @@ def is_language_match(text, language):
     return True
 
 
-def embed_text(text, retries=3):
-    """Generate a 768-dim embedding using Gemini. Retries on rate limits."""
+def embed_text(text, retries=5):
     for attempt in range(retries):
         try:
             result = gemini_client.models.embed_content(
@@ -147,8 +143,8 @@ def embed_text(text, retries=3):
         except Exception as e:
             msg = str(e)
             if "429" in msg or "RESOURCE_EXHAUSTED" in msg:
-                wait = 30 * (attempt + 1)
-                print(f"  ! Gemini rate limit, waiting {wait}s...")
+                wait = 60 * (attempt + 1)  # 60s, 120s, 180s, 240s, 300s
+                print(f"  ! Gemini rate limit, waiting {wait}s (attempt {attempt+1}/{retries})...")
                 time.sleep(wait)
             else:
                 raise
@@ -157,14 +153,16 @@ def embed_text(text, retries=3):
 
 def insert_solution(source_type, source_url, language, error_message, solution_text):
     try:
-        # Filter out cross-language pollution before embedding
+        # Skip if URL already in DB (resume support)
+        existing = supabase.table("solutions").select("id").eq("source_url", source_url).limit(1).execute()
+        if existing.data:
+            return False  # already have it, skip silently
+
         combined = error_message + " " + solution_text
         if not is_language_match(combined, language):
-            print(f"  ~ Skipped (wrong language content): {source_url[:70]}")
+            print(f"  ~ Skipped (wrong language): {source_url[:70]}")
             return False
 
-        # Embed only the error (what users will search with),
-        # not the solution (what they haven't seen yet).
         text_to_embed = f"Programming language: {language}. Error: {error_message}"
         embedding = embed_text(text_to_embed)
 
@@ -185,23 +183,23 @@ def insert_solution(source_type, source_url, language, error_message, solution_t
 # ========== Stack Overflow Scraper ==========
 
 def scrape_stackoverflow(language):
-    """Top-voted questions in [language] with 'error' or 'exception' in title."""
-    print(f"\n[Stack Overflow] Scraping {language}...")
+    print(f"\n[Stack Overflow] Scraping {language} (past year, since {ONE_YEAR_AGO_ISO})...")
     count = 0
 
-    for search_term in ["error", "exception"]:
+    for search_term in SO_SEARCH_TERMS:
         for page in range(1, SO_PAGES_PER_LANG + 1):
             url = "https://api.stackexchange.com/2.3/search/advanced"
             params = {
                 "page": page,
-                "pagesize": 10,
+                "pagesize": 20,                # was 10
                 "order": "desc",
                 "sort": "votes",
                 "tagged": language,
                 "title": search_term,
                 "site": "stackoverflow",
                 "filter": "withbody",
-                "accepted": "True",
+                "fromdate": ONE_YEAR_AGO_UNIX,
+                # NOTE: dropped "accepted: True" -> bigger pool
             }
             if SO_KEY:
                 params["key"] = SO_KEY
@@ -211,21 +209,20 @@ def scrape_stackoverflow(language):
                 r.raise_for_status()
                 questions = r.json().get("items", [])
             except Exception as e:
-                print(f"  x Page {page} failed: {e}")
+                print(f"  x Page {page} ('{search_term}') failed: {e}")
                 continue
 
             for q in questions:
                 if not q.get("is_answered") or q.get("answer_count", 0) == 0:
                     continue
+                if q.get("creation_date", 0) < ONE_YEAR_AGO_UNIX:
+                    continue
 
                 q_id = q["question_id"]
                 ans_url = f"https://api.stackexchange.com/2.3/questions/{q_id}/answers"
                 ans_params = {
-                    "order": "desc",
-                    "sort": "votes",
-                    "site": "stackoverflow",
-                    "filter": "withbody",
-                    "pagesize": 1,
+                    "order": "desc", "sort": "votes",
+                    "site": "stackoverflow", "filter": "withbody", "pagesize": 1,
                 }
                 if SO_KEY:
                     ans_params["key"] = SO_KEY
@@ -235,16 +232,15 @@ def scrape_stackoverflow(language):
                     ar.raise_for_status()
                     answers = ar.json().get("items", [])
                 except Exception as e:
-                    print(f"  x Answers fetch failed Q{q_id}: {e}")
+                    print(f"  x Answers failed Q{q_id}: {e}")
                     continue
 
                 if not answers:
                     continue
 
-                # Extract just the error, not the whole question
                 full_body = clean_html(q["title"] + ". " + q.get("body", ""))
                 error_msg = extract_error_only(full_body, language, fallback_title=q["title"])
-                solution = clean_html(answers[0].get("body", ""))[:3000]
+                solution = clean_html(answers[0].get("body", ""))[:5000]
                 source_url = q["link"]
 
                 if len(solution) < 50:
@@ -254,9 +250,9 @@ def scrape_stackoverflow(language):
                     count += 1
                     print(f"  + [{count}] {error_msg[:70]}")
 
-                time.sleep(1.0)
+                time.sleep(0.5)
 
-            time.sleep(2)
+            time.sleep(1)
 
     print(f"[Stack Overflow] {language}: inserted {count}")
     return count
@@ -264,85 +260,123 @@ def scrape_stackoverflow(language):
 
 # ========== GitHub Scraper ==========
 
+# (repo_name, label_to_filter_by)
 GH_REPOS = {
     "python": [
-        "psf/requests", "pallets/flask", "django/django",
-        "pandas-dev/pandas", "numpy/numpy",
+        ("psf/requests", "Bug"),
+        ("pandas-dev/pandas", "Bug"),
+        ("scipy/scipy", "defect"),
+        ("scrapy/scrapy", "bug"),
+        ("matplotlib/matplotlib", "status: confirmed bug"),
+        ("ansible/ansible", "bug"),
+        ("scikit-learn/scikit-learn", "Bug"),
+        ("python/cpython", "type-bug"),
+        ("apache/airflow", "kind:bug"),
+        ("huggingface/transformers", "bug"),
     ],
     "java": [
-        "spring-projects/spring-boot", "google/guava", "apache/maven",
-        "elastic/elasticsearch", "square/okhttp",
+        ("spring-projects/spring-boot", "type: bug"),
+        ("square/okhttp", "bug"),
+        ("apache/maven", "bug"),
+        ("google/guava", "type=defect"),
+        ("netty/netty", "defect"),
+        ("apache/dubbo", "type/bug"),
+        ("alibaba/arthas", "bug"),
+        ("quarkusio/quarkus", "kind/bug"),
+        ("google/gson", "bug"),
+        ("eclipse-vertx/vert.x", "bug"),
     ],
     "javascript": [
-        "facebook/react", "vuejs/vue", "expressjs/express",
-        "nodejs/node", "axios/axios",
+        ("facebook/react", "Type: Bug"),
+        ("expressjs/express", "bug"),
+        ("nodejs/node", "confirmed-bug"),
+        ("microsoft/TypeScript", "Bug"),
+        ("denoland/deno", "bug"),
+        ("vercel/next.js", "bug"),
+        ("webpack/webpack", "bug"),
+        ("eslint/eslint", "bug"),
+        ("storybookjs/storybook", "bug"),
+        ("nuxt/nuxt", "bug"),
     ],
     "c": [
-        "curl/curl", "git/git", "torvalds/linux",
-        "postgres/postgres", "redis/redis",
+        ("ggerganov/llama.cpp", "bug"),
+        ("netdata/netdata", "bug"),
+        ("php/php-src", "Bug"),
+        ("openzfs/zfs", "Type: Defect"),
+        ("wazuh/wazuh", "type/bug"),
+        ("nginx/nginx", "bug"),
+        ("haproxy/haproxy", "type: bug"),
+        ("ImageMagick/ImageMagick", "bug"),
+        ("audacity/audacity", "bug"),
+        ("gpac/gpac", "bug"),
     ],
 }
 
 
 def scrape_github(language):
-    print(f"\n[GitHub] Scraping {language}...")
+    print(f"\n[GitHub] Scraping {language} (past year, since {ONE_YEAR_AGO_ISO})...")
     count = 0
     repos = GH_REPOS.get(language, [])[:GH_REPOS_PER_LANG]
-    headers = {
-        "Authorization": f"token {GH_TOKEN}",
-        "Accept": "application/vnd.github.v3+json",
-    }
+    headers = {"Authorization": f"token {GH_TOKEN}", "Accept": "application/vnd.github.v3+json"}
 
-    for repo in repos:
-        url = f"https://api.github.com/repos/{repo}/issues"
-        params = {
-            "state": "closed",
-            "sort": "comments",
-            "direction": "desc",
-            "per_page": GH_ISSUES_PER_REPO,
-            "labels": "bug",
-        }
-
-        try:
-            r = requests.get(url, headers=headers, params=params, timeout=15)
-            r.raise_for_status()
-            issues = r.json()
-        except Exception as e:
-            print(f"  x Repo {repo} failed: {e}")
-            continue
-
-        for issue in issues:
-            if "pull_request" in issue:
-                continue
-
-            issue_num = issue["number"]
-            comments_url = issue["comments_url"]
-
+    for repo, bug_label in repos:
+        # Paginate through up to 100 issues
+        for gh_page in range(1, (GH_ISSUES_PER_REPO // 100) + 2):
+            url = f"https://api.github.com/repos/{repo}/issues"
+            params = {
+                "state": "closed",
+                "sort": "comments",
+                "direction": "desc",
+                "per_page": min(100, GH_ISSUES_PER_REPO),
+                "page": gh_page,
+                "labels": bug_label,
+                "since": ONE_YEAR_AGO_ISO,
+            }
             try:
-                cr = requests.get(comments_url, headers=headers, timeout=15)
-                cr.raise_for_status()
-                comments = cr.json()
+                r = requests.get(url, headers=headers, params=params, timeout=15)
+                r.raise_for_status()
+                issues = r.json()
             except Exception as e:
-                print(f"  x Comments failed {repo}#{issue_num}: {e}")
-                continue
+                print(f"  x Repo {repo} p{gh_page} failed: {e}")
+                break
 
-            if not comments:
-                continue
+            if not issues:
+                break
 
-            full_body = (issue.get("title", "") + "\n\n" + (issue.get("body") or ""))
-            error_msg = extract_error_only(full_body, language, fallback_title=issue.get("title", ""))
-            solution = max((c.get("body") or "" for c in comments), key=len)[:3000]
+            for issue in issues:
+                if "pull_request" in issue:
+                    continue
+                created_at = issue.get("created_at", "")
+                if created_at and created_at < ONE_YEAR_AGO_ISO:
+                    continue
 
-            if len(solution) < 50:
-                continue
+                issue_num = issue["number"]
+                comments_url = issue["comments_url"]
+                try:
+                    cr = requests.get(comments_url, headers=headers, timeout=15)
+                    cr.raise_for_status()
+                    comments = cr.json()
+                except Exception as e:
+                    print(f"  x Comments failed {repo}#{issue_num}: {e}")
+                    continue
 
-            if insert_solution("github", issue["html_url"], language, error_msg, solution):
-                count += 1
-                print(f"  + [{count}] {repo}#{issue_num}: {error_msg[:60]}")
+                if not comments:
+                    continue
 
-            time.sleep(1.0)
+                full_body = (issue.get("title", "") + "\n\n" + (issue.get("body") or ""))
+                error_msg = extract_error_only(full_body, language, fallback_title=issue.get("title", ""))
+                solution = max((c.get("body") or "" for c in comments), key=len)[:5000]
 
-        time.sleep(2)
+                if len(solution) < 50:
+                    continue
+
+                if insert_solution("github", issue["html_url"], language, error_msg, solution):
+                    count += 1
+                    print(f"  + [{count}] {repo}#{issue_num}: {error_msg[:60]}")
+
+                time.sleep(0.5)
+
+            time.sleep(1)
 
     print(f"[GitHub] {language}: inserted {count}")
     return count
@@ -352,14 +386,15 @@ def scrape_github(language):
 
 if __name__ == "__main__":
     print("=" * 60)
-    print("RAG Debugging Assistant - Knowledge Base Builder")
+    print("RAG Debugging Assistant - Knowledge Base Builder (HIGH VOLUME)")
+    print(f"Past-year cutoff: {ONE_YEAR_AGO_ISO}")
     print("=" * 60)
 
     total = 0
     for lang in LANGUAGES:
         total += scrape_stackoverflow(lang)
         total += scrape_github(lang)
-
-    print("\n" + "=" * 60)
+        
+    print("\n" + "=" * 60) 
     print(f"DONE. Total solutions inserted: {total}")
     print("=" * 60)
