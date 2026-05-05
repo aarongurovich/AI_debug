@@ -12,7 +12,10 @@ const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 const EMBED_DIMENSIONS = 768;
-const MAX_MATCHES = 5;
+// STRICT LIMITS: Only grab the single best match
+const MAX_MATCHES = 1; 
+// Cosine distance threshold: Lower is stricter. 0.25 ensures only highly related errors pass.
+const MATCH_THRESHOLD = 0.25; 
 const MAX_SOLUTION_CHARS = 1400;
 
 const corsHeaders = {
@@ -34,13 +37,13 @@ function escapeTripleBackticks(value: string) {
 }
 
 function buildContext(matches: any[]) {
-  if (!matches?.length) return "No historical solutions found.";
+  if (!matches?.length) return "No highly relevant historical solutions found.";
   return matches
     .map((match, index) => {
       const sourceUrl = cleanText(match.source_url || "Unknown source", 500);
       const solutionText = cleanText(match.solution_text || "", MAX_SOLUTION_CHARS);
       return [
-        `Match ${index + 1}`,
+        `Top Match`,
         `Source: ${sourceUrl}`,
         `Reference Fix: ${escapeTripleBackticks(solutionText)}`,
       ].join("\n");
@@ -70,7 +73,7 @@ function buildPrompt({
 }) {
   const sourceList = sources.length
     ? sources.map((url) => `- ${url}`).join("\n")
-    : "- No external references found";
+    : "- No relevant external references found";
 
   return `
 You are a senior software debugging assistant.
@@ -86,9 +89,8 @@ Follow these rules exactly:
 - Do not say "here is the markdown" or add any intro text before the first heading.
 - If code is included, use a fenced code block with the language tag ${language.toLowerCase()}.
 - Use bullet points where useful, but do not overdo it.
-- Do not repeat the user's full error message unless needed.
-- Under Sources, only include the provided source URLs that are actually relevant.
-- If the retrieved context is weak, still provide your best fix.
+- STRICT RELEVANCE RULE: If the retrieved reference material does not specifically match the user's exact error mechanism or library context, IGNORE IT entirely. Do not force an irrelevant fix. Rely solely on your baseline knowledge instead.
+- Under Sources, only include the provided source URLs if you actively used them to inform your answer.
 
 You must return Markdown in exactly this structure:
 
@@ -151,10 +153,13 @@ Deno.serve(async (req) => {
     const queryVector = embeddingResponse.embeddings?.[0]?.values;
     if (!queryVector?.length) throw new Error("Failed to generate query embedding.");
 
-    const { data: vectorMatches, error: dbError } = await supabase.rpc("match_solutions_v2", {
+    // Execute Strict Hybrid Search
+    const { data: vectorMatches, error: dbError } = await supabase.rpc("match_solutions_hybrid", {
       query_embedding: queryVector,
+      query_text: errorMessage,
       match_count: MAX_MATCHES,
       filter_language: language.toLowerCase(),
+      match_threshold: MATCH_THRESHOLD
     });
 
     if (dbError) throw dbError;

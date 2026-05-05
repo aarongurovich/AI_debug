@@ -185,8 +185,8 @@ export default function App() {
 
   const loadSample = () => {
     setLanguage('Python');
-    setErrorMessage(`CParserError: Error tokenizing data`);
-    setCodeSnippet(`import pandas as pd\n\ndf = pd.read_csv("data.csv")\nprint(df)`);
+    setErrorMessage(`AttributeError: 'InstallRequirement' object has no attribute 'use_pep517'`);
+    setCodeSnippet(`pip install -U 'pip<25.3'`);
   };
 
   return (
@@ -341,7 +341,6 @@ export default function App() {
                       required
                       value={errorMessage}
                       onChange={(e) => setErrorMessage(e.target.value)}
-                      placeholder="TypeError: Cannot read properties of undefined (reading 'map')"
                       rows={5}
                       className="w-full resize-none rounded-lg border border-slate-200 bg-slate-50 px-3.5 py-2.5 font-mono text-[13px] text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white"
                     />
