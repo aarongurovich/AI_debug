@@ -1,0 +1,35 @@
+name: Daily Knowledge Base Scrape
+
+on:
+  schedule:
+    # Runs every day at 6:00 AM UTC (midnight Central)
+    - cron: '0 6 * * *'
+  workflow_dispatch:  # allows manual trigger from GitHub UI
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          pip install google-genai supabase requests python-dotenv markdownify
+
+      - name: Run daily scraper
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          STACK_EXCHANGE_KEY: ${{ secrets.STACK_EXCHANGE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GH_PERSONAL_TOKEN }}
+        run: |
+          python data_pipeline/scraper_daily.py
