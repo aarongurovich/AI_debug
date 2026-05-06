@@ -101,7 +101,6 @@ function DebugResult({ markdown }) {
     });
   }, [html]);
 
-  // No more loading states needed, it renders instantly
   return (
     <div
       ref={ref}
