@@ -54,7 +54,6 @@ async def fetch_benchmark(session, idx, total, true_lang, target_norm, fuzzed_ms
     
     start_time = time.time()
     
-    # Implemented your MAX_RETRIES logic
     for attempt in range(MAX_RETRIES):
         try:
             async with session.post(ENDPOINT_URL, json={"language": true_lang, "errorMessage": fuzzed_msg}, timeout=TIMEOUT_SECONDS) as res:
@@ -98,7 +97,7 @@ async def fetch_benchmark(session, idx, total, true_lang, target_norm, fuzzed_ms
 async def run_benchmarks_async():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
 
-    # Fetching balanced data synchronously (this is fast enough)
+    # Fetching balanced data synchronously
     response = supabase.table("solutions").select("language, error_message, source_url").limit(3000).execute()
     df = pd.DataFrame(response.data).dropna()
     df['language'] = df['language'].str.lower().str.strip()
@@ -139,7 +138,6 @@ def generate_dashboard(df):
     sns.set_theme(style="whitegrid", context="talk")
     df_succ = df[df["Hit"] == True]
 
-    # ... [Keep your exact generate_dashboard logic here] ...
     # 1. MRR Heatmap (Language vs Mutation)
     plt.figure(figsize=(12, 8))
     pivot = df.pivot_table(index='Mutation', columns='Language', values='MRR', aggfunc='mean')
