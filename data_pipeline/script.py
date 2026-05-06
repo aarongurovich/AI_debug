@@ -29,10 +29,10 @@ supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # --- Config: HIGH VOLUME ---
 LANGUAGES = ["python", "java", "javascript", "c"]
-SO_PAGES_PER_LANG = 10           # was 4
+SO_PAGES_PER_LANG = 10
 SO_SEARCH_TERMS = ["error", "exception", "crash", "fails", "throws", "broken"]
-GH_REPOS_PER_LANG = 10           # was 5
-GH_ISSUES_PER_REPO = 100          # was 20
+GH_REPOS_PER_LANG = 10
+GH_ISSUES_PER_REPO = 100
 EMBED_DIMS = 768
 
 # --- Past-year recency cutoff ---
@@ -191,7 +191,7 @@ def scrape_stackoverflow(language):
             url = "https://api.stackexchange.com/2.3/search/advanced"
             params = {
                 "page": page,
-                "pagesize": 20,                # was 10
+                "pagesize": 20,
                 "order": "desc",
                 "sort": "votes",
                 "tagged": language,
@@ -199,7 +199,6 @@ def scrape_stackoverflow(language):
                 "site": "stackoverflow",
                 "filter": "withbody",
                 "fromdate": ONE_YEAR_AGO_UNIX,
-                # NOTE: dropped "accepted: True" -> bigger pool
             }
             if SO_KEY:
                 params["key"] = SO_KEY
