@@ -186,7 +186,7 @@ select:focus {
   background: var(--accent-bg);
 }
 
-/* Helpful app-wide utility styling for your fullscreen layout */
+/* Helpful app-wide utility styling for fullscreen layout */
 .app-shell {
   width: 100%;
   min-height: 100svh;
